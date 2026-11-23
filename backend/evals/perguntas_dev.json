@@ -1,0 +1,19 @@
+[
+  {"pergunta": "como regular a altura da cadeira", "esperados": ["ajuste-altura-do-assento"], "tipo": "dev"},
+  {"pergunta": "meus pés não alcançam o chão", "esperados": ["ajuste-altura-do-assento"], "tipo": "dev"},
+  {"pergunta": "o que é altura poplítea", "esperados": ["ajuste-altura-do-assento", "antropometria-e-calculo"], "tipo": "dev"},
+  {"pergunta": "como vocês calculam minhas medidas só com a altura", "esperados": ["antropometria-e-calculo"], "tipo": "dev"},
+  {"pergunta": "quantos cm o braço da cadeira deve ficar acima do assento", "esperados": ["bracos-da-cadeira", "nbr13962-cadeiras-de-escritorio"], "tipo": "dev"},
+  {"pergunta": "o que significa braço 4D", "esperados": ["bracos-da-cadeira"], "tipo": "dev"},
+  {"pergunta": "peso 130 kg, a cadeira aguenta?", "esperados": ["capacidade-de-peso"], "tipo": "dev"},
+  {"pergunta": "tela ou espuma, qual é melhor", "esperados": ["como-ler-a-ficha-tecnica"], "tipo": "dev"},
+  {"pergunta": "diferença entre mecanismo syncro e relax", "esperados": ["encosto-lombar-e-reclinacao"], "tipo": "dev"},
+  {"pergunta": "a que altura fica o monitor", "esperados": ["monitor-mesa-e-pausas"], "tipo": "dev"},
+  {"pergunta": "trabalho no notebook o dia todo", "esperados": ["monitor-mesa-e-pausas", "nr17-mobiliario-e-assentos"], "tipo": "dev"},
+  {"pergunta": "a certificação da NBR 13962 é obrigatória?", "esperados": ["nbr13962-cadeiras-de-escritorio"], "tipo": "dev"},
+  {"pergunta": "o que a NR-17 exige da cadeira", "esperados": ["nr17-mobiliario-e-assentos"], "tipo": "dev"},
+  {"pergunta": "a borda do assento aperta atrás do joelho", "esperados": ["profundidade-e-largura-do-assento"], "tipo": "dev"},
+  {"pergunta": "cadeira gamer é boa para a coluna?", "esperados": ["sinais-e-mitos"], "tipo": "dev"},
+  {"pergunta": "receita de bolo de cenoura", "esperados": [], "tipo": "fora_do_escopo"},
+  {"pergunta": "quem ganhou o campeonato brasileiro", "esperados": [], "tipo": "fora_do_escopo"}
+]
