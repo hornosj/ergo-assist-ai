@@ -12,3 +12,4 @@ vite.log
 frontend/dist/
 .env.*
 !backend/.env.example
+*.log
