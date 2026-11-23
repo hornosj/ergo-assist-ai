@@ -1,9 +1,11 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 from rest_framework import permissions, serializers, status
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
@@ -30,6 +32,19 @@ class PodeUsarAssistente(permissions.BasePermission):
 class CadastroSerializer(serializers.Serializer):
     username = serializers.RegexField(r"^[\w.@+-]{3,40}$")
     password = serializers.CharField(write_only=True)
+    convite = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    def validate_convite(self, v):
+        esperado = settings.CODIGO_CONVITE
+        if esperado and not constant_time_compare(v or "", esperado):
+            raise serializers.ValidationError("código de convite inválido")
+        return v
+
+    def validate(self, dados):
+        if settings.CODIGO_CONVITE and "convite" not in dados:
+            raise serializers.ValidationError({"convite": "informe o código de convite"})
+        dados.pop("convite", None)
+        return dados
 
     def validate_username(self, v):
         if get_user_model().objects.filter(username__iexact=v).exists():
@@ -75,7 +90,7 @@ class MensagemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Mensagem
         fields = ["id", "papel", "texto", "modo", "modelo", "fontes", "alertas", "latencia_ms",
-                  "tokens_entrada", "tokens_saida", "criada_em", "passos"]
+                  "tokens_entrada", "tokens_saida", "custo_usd", "criada_em", "passos"]
 
     def get_passos(self, m):
         return [

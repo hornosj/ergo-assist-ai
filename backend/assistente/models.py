@@ -32,6 +32,7 @@ class Mensagem(models.Model):
     latencia_ms = models.PositiveIntegerField(null=True, blank=True)
     tokens_entrada = models.PositiveIntegerField(default=0)
     tokens_saida = models.PositiveIntegerField(default=0)
+    custo_usd = models.DecimalField(max_digits=10, decimal_places=6, default=0)
     criada_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

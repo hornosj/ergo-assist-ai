@@ -158,6 +158,9 @@ def _ficha(c: Cadeira) -> dict:
         "campos_nao_confirmados": c.campos_incertos,
         "fontes": c.fontes,
         "consultado_em": c.consultado_em.isoformat() if c.consultado_em else None,
+        # Observações trazem opcionais que mudam o encaixe (ex.: pistão mais curto)
+        # e divergências entre fontes.
+        "observacoes": c.observacoes[:900],
     }
 
 

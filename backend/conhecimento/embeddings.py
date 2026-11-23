@@ -34,8 +34,8 @@ class EmbedderFastembed:
     def __init__(self):
         from fastembed import TextEmbedding
 
-        cache = settings.BASE_DIR / ".cache" / "fastembed"
-        self._modelo = TextEmbedding(settings.EMBEDDING_MODEL, cache_dir=str(cache))
+        # Na imagem Docker o modelo já vem baixado nesse diretório (sem download no boot).
+        self._modelo = TextEmbedding(settings.EMBEDDING_MODEL, cache_dir=settings.FASTEMBED_CACHE)
 
     def embed(self, textos: list[str]) -> list[list[float]]:
         return [v.tolist() for v in self._modelo.embed(textos)]

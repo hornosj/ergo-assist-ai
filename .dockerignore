@@ -1,0 +1,14 @@
+# Segredos e lixo local NUNCA entram na imagem
+**/.env
+**/.env.*
+!backend/.env.example
+backend/.venv/
+backend/.cache/
+backend/staticfiles/
+backend/evals/resultados/
+**/__pycache__/
+**/.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+.git/
+*.log

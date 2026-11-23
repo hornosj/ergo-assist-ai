@@ -1,9 +1,10 @@
-"""Cliente do OpenRouter (API compatível com OpenAI) com escolha de modelo grátis.
+"""Cliente do OpenRouter (API compatível com OpenAI) com cadeia de modelos.
 
-Sem `OPENROUTER_MODEL`, lê o catálogo do OpenRouter (cache de 1 h) e usa
-modelos `:free` que aceitam `tools`, na ordem de `PREFERIDOS`. Se um modelo
-falhar (429, 5xx, timeout), tenta o próximo. Modelos grátis mudam de nome e
-somem com frequência: por isso o catálogo é a fonte e a lista é só semente.
+Ordem de tentativa: os modelos de `OPENROUTER_MODELS` (pagos e baratos, ex.:
+DeepSeek V4.1 Flash e Claude Haiku 5.5), depois os `:free` com `tools` do
+catálogo do OpenRouter (cache de 1 h), na ordem de `PREFERIDOS`. Se um modelo
+falhar (429, 5xx, timeout), tenta o próximo. O custo real de cada chamada vem
+do próprio OpenRouter (`usage.cost`, em dólares) e é auditado em ChamadaLLM.
 """
 
 import logging
@@ -16,14 +17,17 @@ from django.conf import settings
 log = logging.getLogger("ergo.llm")
 
 URL_BASE = "https://openrouter.ai/api/v1"
+# Ordem medida em 23/11/2026 com uma pergunta de recomendação (tool calling
+# certo e latência). Os da lista antiga (Qwen3, GPT-OSS, Llama 3.3) deixaram de
+# ser grátis; Gemma e Ling estavam dando 429 do provedor nesse dia.
 PREFERIDOS = [
-    "qwen/qwen3-next-80b-a3b-instruct:free",
-    "openai/gpt-oss-120b:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "openai/gpt-oss-20b:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",  # 5,9 s, tool certa
+    "nvidia/nemotron-3.5-super-vl:free",  # 3,0 s, tool certa
+    "baidu/ernie-5.5-flash-preview:free",  # 1,6 s, tool certa (+1 chamada extra)
+    "google/gemma-4-31b-it:free",
+    "inclusionai/ling-3.2-flash:free",
 ]
-TENTATIVAS = 3
+TENTATIVAS = 4
 TIMEOUT_S = 60.0
 _cache: dict = {"quando": 0.0, "modelos": []}
 
@@ -40,6 +44,7 @@ class RespostaLLM:
     tokens_entrada: int = 0
     tokens_saida: int = 0
     latencia_ms: int = 0
+    custo_usd: float = 0.0
     mensagem_bruta: dict = field(default_factory=dict)
 
 
@@ -52,6 +57,11 @@ def _gratis_com_tools(m: dict) -> bool:
 def modelos_candidatos(cliente: httpx.Client | None = None) -> list[str]:
     if settings.OPENROUTER_MODEL:
         return [settings.OPENROUTER_MODEL]
+    pagos = list(settings.OPENROUTER_MODELS)
+    return pagos + [m for m in _modelos_gratis(cliente) if m not in pagos]
+
+
+def _modelos_gratis(cliente: httpx.Client | None = None) -> list[str]:
     if time.time() - _cache["quando"] < 3600 and _cache["modelos"]:
         return _cache["modelos"]
     try:
@@ -67,7 +77,13 @@ def modelos_candidatos(cliente: httpx.Client | None = None) -> list[str]:
     return _cache["modelos"]
 
 
-def conversar(mensagens: list[dict], ferramentas: list[dict], registrar=None) -> RespostaLLM:
+def conversar(
+    mensagens: list[dict],
+    ferramentas: list[dict],
+    registrar=None,
+    tool_choice: str = "auto",
+    max_tokens: int = 2500,  # respostas com tabela de comparação passam de 1.200
+) -> RespostaLLM:
     """Uma ida ao modelo. `registrar(modelo, ok, erro, resposta)` audita cada tentativa."""
     if not settings.OPENROUTER_APIKEY:
         raise LLMIndisponivel("OPENROUTER_APIKEY não configurada")
@@ -86,8 +102,9 @@ def conversar(mensagens: list[dict], ferramentas: list[dict], registrar=None) ->
                         "model": modelo,
                         "messages": mensagens,
                         "temperature": 0.2,
-                        "max_tokens": 1200,
-                        **({"tools": ferramentas, "tool_choice": "auto"} if ferramentas else {}),
+                        "max_tokens": max_tokens,
+                        "usage": {"include": True},  # OpenRouter devolve o custo em usage.cost
+                        **({"tools": ferramentas, "tool_choice": tool_choice} if ferramentas else {}),
                     },
                 )
                 latencia = int((time.monotonic() - inicio) * 1000)
@@ -105,6 +122,7 @@ def conversar(mensagens: list[dict], ferramentas: list[dict], registrar=None) ->
                     tokens_entrada=uso.get("prompt_tokens", 0),
                     tokens_saida=uso.get("completion_tokens", 0),
                     latencia_ms=latencia,
+                    custo_usd=float(uso.get("cost") or 0),
                     mensagem_bruta=msg,
                 )
                 if registrar:

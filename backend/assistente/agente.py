@@ -15,6 +15,10 @@ import re
 import time
 from dataclasses import dataclass, field
 
+from django.conf import settings
+from django.db.models import Sum
+from django.utils import timezone
+
 from medidas.models import Perfil
 
 from . import llm
@@ -35,7 +39,10 @@ REGRAS
 6. Quando a ficha tiver campos não confirmados, avise que o dado não foi confirmado na fonte.
 7. Você não dá diagnóstico médico. Dor persistente, formigamento ou lesão: oriente procurar fisioterapeuta ou médico do trabalho.
 8. Para salvar o perfil, use propor_salvar_perfil e diga que a pessoa precisa confirmar na tela. Nunca diga que salvou.
-9. Preços são de referência, da data da consulta; podem ter mudado."""
+9. Preços são de referência, da data da consulta; podem ter mudado.
+10. Cadeira sem preço no Brasil (preco_referencia_brl nulo) NUNCA entra em "cabe no orçamento": diga que o preço não foi confirmado e liste à parte.
+11. Se a cadeira pedida não está no catálogo, diga isso e ofereça as do catálogo mais parecidas em faixa de preço e regulagens.
+12. Leia as "observacoes" da ficha: elas trazem opcionais que mudam o encaixe (pistão mais curto ou mais longo, tamanhos) e divergências entre fontes. Se um opcional resolve o problema da pessoa, diga."""
 
 
 @dataclass
@@ -50,6 +57,16 @@ class Resultado:
     tokens_entrada: int = 0
     tokens_saida: int = 0
     latencia_ms: int = 0
+    custo_usd: float = 0.0
+
+
+def gasto_hoje(usuario=None) -> float:
+    """Gasto de hoje com LLM: de um usuário, ou de todos (usuario=None)."""
+    inicio = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+    qs = ChamadaLLM.objects.filter(criada_em__gte=inicio)
+    if usuario is not None:
+        qs = qs.filter(usuario=usuario)
+    return float(qs.aggregate(t=Sum("custo_usd"))["t"] or 0)
 
 
 def _contexto_perfil(usuario) -> str:
@@ -67,31 +84,46 @@ def _historico(conversa: Conversa) -> list[dict]:
     return [{"role": m.papel, "content": m.texto} for m in msgs]
 
 
-NUMERO = re.compile(r"(?<![\w.])(\d{1,5}(?:[.,]\d+)?)(?![\w])")
+# Número em formato brasileiro ("1.887,90", "45,5") ou de JSON ("1887.9").
+NUMERO = re.compile(r"(?<![\w.,])(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)(?![\w])")
+# Identificadores que parecem número mas não são medida: normas e itens de norma.
+IDENTIFICADORES = re.compile(
+    r"\b(?:NBR|NR|ISO|EN|BIFMA|ANSI|X)\s*-?\s*\d[\d.]*(?:-\d+)?|\b\d+(?:\.\d+){2,}\b", re.I
+)
 
 
 def _numeros(texto: str) -> set[float]:
     saida = set()
-    for bruto in NUMERO.findall(texto):
-        normalizado = bruto.replace(".", "").replace(",", ".") if re.match(r"^\d{1,3}(\.\d{3})+$", bruto) else bruto.replace(",", ".")
+    for bruto in NUMERO.findall(IDENTIFICADORES.sub(" ", texto)):
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", bruto):
+            normalizado = bruto.replace(".", "").replace(",", ".")
+        else:
+            normalizado = bruto.replace(",", ".")
         try:
-            saida.add(round(float(normalizado), 1))
+            saida.add(round(float(normalizado), 2))
         except ValueError:
             pass
     return saida
 
 
+def _tem_lastro(n: float, conhecidos: list[float]) -> bool:
+    for k in conhecidos:
+        # arredondamento (45,3 -> 45) e conversão cm <-> m (157 cm -> 1,6 m)
+        for alvo in (k, k / 100, k * 100):
+            if abs(n - alvo) <= max(0.6 if alvo >= 10 else 0.06, abs(alvo) * 0.005):
+                return True
+    return False
+
+
 def verificar_numeros(resposta: str, lastro: str) -> list[str]:
-    """Números da resposta que não aparecem nos dados (nem arredondados)."""
-    conhecidos = _numeros(lastro)
-    conhecidos |= {round(n) for n in conhecidos}
+    """Números da resposta que não aparecem nos dados (com tolerância de arredondamento)."""
+    conhecidos = sorted(_numeros(lastro))
     soltos = []
-    for n in _numeros(resposta):
+    for n in sorted(_numeros(resposta)):
         if n <= 10 and n == int(n):
             continue  # contagens, listas numeradas, [1], "2 dedos"…
-        if n in conhecidos or round(n) in conhecidos:
-            continue
-        soltos.append(f"{n:g}")
+        if not _tem_lastro(n, conhecidos):
+            soltos.append(f"{n:g}")
     return soltos
 
 
@@ -106,8 +138,14 @@ def responder(usuario, conversa: Conversa, pergunta: str) -> Resultado:
     ]
     esquemas = [f.esquema() for f in FERRAMENTAS.values()]
     passos: list[dict] = []
-    lastro = [pergunta, _contexto_perfil(usuario)]
+    # Lastro = tudo que já foi dito ou calculado nesta conversa: pergunta, perfil,
+    # mensagens anteriores e resultados de ferramentas de turnos anteriores (os
+    # números de antes já passaram pela verificação quando foram ditos).
+    lastro = [pergunta, _contexto_perfil(usuario), *(m["content"] for m in mensagens[1:-1])]
+    lastro += [json.dumps(r, ensure_ascii=False, default=str)
+               for r in conversa.chamadas.values_list("resultado", flat=True)]
     tok_in = tok_out = 0
+    custo = 0.0
     modelo = ""
 
     def registrar(nome_modelo, ok, erro, resp):
@@ -117,21 +155,35 @@ def responder(usuario, conversa: Conversa, pergunta: str) -> Resultado:
             modelo=nome_modelo,
             ok=ok,
             erro=erro,
+            custo_usd=resp.custo_usd if resp else 0,
             tokens_entrada=resp.tokens_entrada if resp else 0,
             tokens_saida=resp.tokens_saida if resp else 0,
             latencia_ms=resp.latencia_ms if resp else 0,
         )
 
     try:
+        gasto = gasto_hoje(usuario)
+        if gasto >= settings.LIMITE_GASTO_DIARIO_USD:
+            raise llm.LLMIndisponivel(f"limite diário de gasto atingido (US$ {gasto:.4f})")
+        if gasto_hoje() >= settings.LIMITE_GASTO_GLOBAL_DIARIO_USD:
+            raise llm.LLMIndisponivel("limite diário de gasto do sistema atingido")
         texto_final = ""
+        vazias = 0
         for _ in range(MAX_PASSOS):
             resp = llm.conversar(mensagens, esquemas, registrar=registrar)
             modelo = resp.modelo
             tok_in += resp.tokens_entrada
             tok_out += resp.tokens_saida
+            custo += resp.custo_usd
             if not resp.chamadas:
                 texto_final = resp.conteudo.strip()
-                break
+                if texto_final or vazias >= 1:
+                    break
+                # Alguns modelos encerram sem ferramenta e sem texto (só raciocínio
+                # interno): pede a resposta uma vez antes de desistir.
+                vazias += 1
+                mensagens.append({"role": "user", "content": "Escreva agora a resposta final para o usuário."})
+                continue
             mensagens.append({"role": "assistant", "content": resp.conteudo or "", "tool_calls": resp.chamadas})
             for chamada in resp.chamadas:
                 nome = chamada["function"]["name"]
@@ -151,6 +203,19 @@ def responder(usuario, conversa: Conversa, pergunta: str) -> Resultado:
                 passos.append({"ferramenta": nome, "argumentos": args, "ok": "erro" not in saida,
                                "duracao_ms": duracao})
                 mensagens.append({"role": "tool", "tool_call_id": chamada.get("id", nome), "content": conteudo[:12000]})
+        else:
+            # Passos esgotados: uma última ida SEM permitir ferramentas obriga o
+            # modelo a responder com o que já coletou (em vez de desistir).
+            mensagens.append({
+                "role": "user",
+                "content": "Responda agora, sem chamar mais ferramentas, usando só os resultados acima.",
+            })
+            resp = llm.conversar(mensagens, esquemas, registrar=registrar, tool_choice="none")
+            tok_in += resp.tokens_entrada
+            tok_out += resp.tokens_saida
+            custo += resp.custo_usd
+            texto_final = resp.conteudo.strip()
+            passos.append({"aviso": f"limite de {MAX_PASSOS} passos: resposta fechada sem novas ferramentas"})
         if not texto_final:
             texto_final = "Não consegui fechar a resposta em poucos passos. Pode reformular ou detalhar?"
         modo = "ia"
@@ -170,7 +235,7 @@ def responder(usuario, conversa: Conversa, pergunta: str) -> Resultado:
     ]
     return Resultado(
         texto=texto_final, modo=modo, modelo=modelo, fontes=fontes, alertas=alertas, passos=passos,
-        acoes=acoes, tokens_entrada=tok_in, tokens_saida=tok_out,
+        acoes=acoes, tokens_entrada=tok_in, tokens_saida=tok_out, custo_usd=round(custo, 6),
         latencia_ms=int((time.monotonic() - inicio) * 1000),
     )
 
@@ -266,7 +331,7 @@ def registrar_turno(usuario, conversa: Conversa, pergunta: str) -> tuple[Mensage
     msg = Mensagem.objects.create(
         conversa=conversa, papel="assistant", texto=resultado.texto, modo=resultado.modo,
         modelo=resultado.modelo, fontes=resultado.fontes, alertas=resultado.alertas,
-        latencia_ms=resultado.latencia_ms, tokens_entrada=resultado.tokens_entrada,
+        latencia_ms=resultado.latencia_ms, tokens_entrada=resultado.tokens_entrada, custo_usd=resultado.custo_usd,
         tokens_saida=resultado.tokens_saida,
     )
     conversa.chamadas.filter(mensagem__isnull=True).update(mensagem=msg)

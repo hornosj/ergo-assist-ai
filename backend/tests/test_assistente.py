@@ -122,6 +122,12 @@ def test_verificar_numeros():
     assert verificar_numeros("assento a 46 cm, 2 dedos", "ideal 46.3") == []
     assert verificar_numeros("custa R$ 1.299", "preco 1299.0") == []
     assert verificar_numeros("aguenta 150 kg", "carga 120") == ["150"]
+    # falsos positivos do eval de 23/11: norma, centavos, cm -> m, item de norma
+    assert verificar_numeros("segue a NBR 13962 e o item 17.6.6", "") == []
+    assert verificar_numeros("custa R$ 1.887,90", '{"preco": 1887.9}') == []
+    assert verificar_numeros("indicada para 1,6 a 1,96 m", '{"altura_usuario": [157, 196]}') == []
+    assert verificar_numeros("indicada até 1,9 m", '{"altura_usuario": [157, 196]}') == ["1.9"]  # 1,96 m
+    assert verificar_numeros("custa R$ 1.950", '{"preco": 1887.9}') == ["1950"]
 
 
 # --- isolamento e permissões -----------------------------------------------------
@@ -156,3 +162,103 @@ def test_cadastro_da_permissao_e_token():
     c.credentials(HTTP_AUTHORIZATION=f"Token {r.json()['token']}")
     assert c.get("/api/auth/eu").json()["pode_usar_assistente"] is True
     assert c.post("/api/conversas").status_code == 201
+
+
+def test_teto_de_gasto_diario_desliga_a_ia(cliente, usuario, monkeypatch, settings):
+    from assistente.models import ChamadaLLM
+
+    settings.OPENROUTER_APIKEY = "x"
+    settings.LIMITE_GASTO_DIARIO_USD = 0.01
+    ChamadaLLM.objects.create(usuario=usuario, modelo="deepseek/x", custo_usd="0.02")
+    chamado = []
+    monkeypatch.setattr(llm, "conversar", lambda *a, **k: chamado.append(1))
+    conv = cliente.post("/api/conversas").json()
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "como regular o assento?"}).json()
+    assert corpo["modo"] == "sem_ia" and chamado == []
+
+
+def test_custo_da_resposta_e_somado(cliente, monkeypatch, settings):
+    settings.OPENROUTER_APIKEY = "x"
+    r1 = resposta(chamadas=[chamada("calcular_medidas", {"estatura_cm": 170})])
+    r1.custo_usd = 0.0004
+    r2 = resposta("Seu assento ideal fica perto de 44 cm.")
+    r2.custo_usd = 0.0002
+    monkeypatch.setattr(llm, "conversar", LLMRoteirizado(r1, r2))
+    conv = cliente.post("/api/conversas").json()
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "tenho 170 cm"}).json()
+    assert float(corpo["custo_usd"]) == pytest.approx(0.0006)
+
+
+def test_numero_de_turno_anterior_tem_lastro(cliente, monkeypatch, settings):
+    settings.OPENROUTER_APIKEY = "x"
+    monkeypatch.setattr(llm, "conversar", LLMRoteirizado(resposta("Seu orçamento de R$ 12.000 permite várias.")))
+    conv = cliente.post("/api/conversas").json()
+    cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "tenho R$ 12.000 de orçamento"})
+    monkeypatch.setattr(llm, "conversar", LLMRoteirizado(resposta("Com R$ 12.000 dá para a premium.")))
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "e a premium?"}).json()
+    assert corpo["alertas"] == []
+
+
+def test_passos_esgotados_fecham_resposta_sem_ferramentas(cliente, monkeypatch, settings):
+    from assistente.agente import MAX_PASSOS
+
+    settings.OPENROUTER_APIKEY = "x"
+    em_loop = [resposta(chamadas=[chamada("calcular_medidas", {"estatura_cm": 152}, f"c{i}")]) for i in range(MAX_PASSOS)]
+    roteiro = LLMRoteirizado(*em_loop, resposta("Para 1,52 m, poucas cadeiras descem o suficiente."))
+    monkeypatch.setattr(llm, "conversar", lambda m, f, registrar=None, **kw: (roteiro.recebidas.append(kw), roteiro(m, f, registrar))[1])
+    conv = cliente.post("/api/conversas").json()
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "sou baixinha, 1,52 m"}).json()
+    assert corpo["texto"].startswith("Para 1,52 m")
+    assert roteiro.recebidas[-2] == {"tool_choice": "none"}  # a última ida proíbe ferramentas
+
+
+def test_resposta_vazia_pede_de_novo(cliente, monkeypatch, settings):
+    settings.OPENROUTER_APIKEY = "x"
+    roteiro = LLMRoteirizado(resposta(""), resposta("Agora sim: regule o assento na altura do joelho."))
+    monkeypatch.setattr(llm, "conversar", roteiro)
+    conv = cliente.post("/api/conversas").json()
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "como regular?"}).json()
+    assert corpo["texto"].startswith("Agora sim")
+    assert roteiro.recebidas[1][-1]["content"].startswith("Escreva agora")
+
+
+def test_resposta_vazia_pede_de_novo(cliente, monkeypatch, settings):
+    settings.OPENROUTER_APIKEY = "x"
+    roteiro = LLMRoteirizado(resposta(""), resposta("Agora sim: regule o assento na altura do joelho."))
+    monkeypatch.setattr(llm, "conversar", roteiro)
+    conv = cliente.post("/api/conversas").json()
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "como regular?"}).json()
+    assert corpo["texto"].startswith("Agora sim")
+    assert roteiro.recebidas[1][-1]["content"].startswith("Escreva agora")
+
+
+def test_teto_global_desliga_a_ia_para_todos(cliente, usuario, django_user_model, monkeypatch, settings):
+    from assistente.models import ChamadaLLM
+
+    settings.OPENROUTER_APIKEY = "x"
+    settings.LIMITE_GASTO_GLOBAL_DIARIO_USD = 0.05
+    outro = criar_usuario(django_user_model, "gastador")
+    ChamadaLLM.objects.create(usuario=outro, modelo="deepseek/x", custo_usd="0.06")
+    monkeypatch.setattr(llm, "conversar", lambda *a, **k: pytest.fail("não deveria chamar o LLM"))
+    conv = cliente.post("/api/conversas").json()
+    corpo = cliente.post(f"/api/conversas/{conv['id']}/mensagens", {"texto": "como regular?"}).json()
+    assert corpo["modo"] == "sem_ia"
+
+
+def test_cadastro_exige_convite_quando_configurado(settings):
+    settings.CODIGO_CONVITE = "segredo-123"
+    c = APIClient()
+    assert c.post("/api/auth/cadastro", {"username": "fabi", "password": "Senha-forte-123"}).status_code == 400
+    assert c.post("/api/auth/cadastro", {"username": "fabi", "password": "Senha-forte-123",
+                                         "convite": "errado"}).status_code == 400
+    ok = c.post("/api/auth/cadastro", {"username": "fabi", "password": "Senha-forte-123", "convite": "segredo-123"})
+    assert ok.status_code == 201
+
+
+def test_saude_e_spa(client, settings, tmp_path):
+    assert client.get("/api/saude").json() == {"ok": True}
+    (tmp_path / "index.html").write_text("<html>ergo</html>", encoding="utf-8")
+    settings.FRONTEND_DIST = tmp_path
+    r = client.get("/medidas")
+    assert r.status_code == 200 and b"ergo" in b"".join(r.streaming_content)
+    assert client.get("/api/nao-existe").status_code == 404

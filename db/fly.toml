@@ -1,0 +1,22 @@
+# Postgres + pgvector como app privado: SEM [http_service] e sem IP público.
+# Só o app web alcança, pela rede interna do Fly (ergo-assist-db.internal:5432).
+# Segredo: POSTGRES_PASSWORD (fly secrets).
+app = "ergo-assist-db"
+primary_region = "gru"
+
+[build]
+  image = "pgvector/pgvector:pg17"
+
+[env]
+  POSTGRES_USER = "ergo"
+  POSTGRES_DB = "ergo"
+  # O volume tem lost+found na raiz; o Postgres quer um diretório vazio.
+  PGDATA = "/var/lib/postgresql/data/pgdata"
+
+[mounts]
+  source = "ergo_pgdata"
+  destination = "/var/lib/postgresql/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

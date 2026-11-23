@@ -1,0 +1,157 @@
+==> Verifying app config
+Validating C:\Users\hornos\dev\ergo-assist-ai\fly.toml
+[32m✓[0m Configuration is valid
+--> Verified app config
+[33mWARN[0m DJANGO_EXIGIR_SECRET may be a potentially sensitive environment variable. Consider setting it as a secret, and removing it from the [env] section: https://fly.io/docs/apps/secrets/
+
+==> Building image
+Waiting for depot builder...
+
+==> Building image with Depot
+--> ]8;;build: ]8;;
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 30B 0.1s
+#1 transferring dockerfile: 1.48kB 0.4s done
+#1 DONE 0.4s
+
+#2 [internal] load metadata for docker.io/library/node:22-alpine
+#2 ...
+
+#3 [internal] load metadata for docker.io/library/python:3.13-slim
+#3 DONE 0.2s
+
+#2 [internal] load metadata for docker.io/library/node:22-alpine
+#2 DONE 0.2s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 33B 0.1s
+#4 transferring context: 291B 0.4s done
+#4 DONE 0.4s
+
+#5 [front 1/6] FROM docker.io/library/node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+#5 resolve docker.io/library/node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a done
+#5 DONE 0.0s
+
+#6 [stage-1 1/9] FROM docker.io/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+#6 resolve docker.io/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 7.44kB 0.4s done
+#7 DONE 0.4s
+
+#8 [stage-1 4/9] RUN pip install --no-cache-dir -r requirements.txt
+#8 CACHED
+
+#9 [stage-1 3/9] COPY backend/requirements.txt .
+#9 CACHED
+
+#10 [stage-1 2/9] WORKDIR /app/backend
+#10 CACHED
+
+#11 [stage-1 5/9] RUN python -c "from fastembed import TextEmbedding; TextEmbedding('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', cache_dir='/opt/fastembed')"
+#11 CACHED
+
+#12 [front 4/6] RUN npm ci
+#12 CACHED
+
+#13 [front 5/6] COPY frontend/ ./
+#13 CACHED
+
+#14 [front 2/6] WORKDIR /front
+#14 CACHED
+
+#15 [front 3/6] COPY frontend/package.json frontend/package-lock.json ./
+#15 CACHED
+
+#16 [front 6/6] RUN npm run build
+#16 CACHED
+
+#17 [stage-1 6/9] COPY backend/ .
+#17 DONE 0.0s
+
+#18 [stage-1 7/9] COPY --from=front /front/dist /app/frontend_dist
+#18 DONE 0.0s
+
+#19 [stage-1 8/9] RUN python manage.py collectstatic --noinput
+#19 1.554 
+#19 1.554 157 static files copied to '/app/backend/staticfiles'.
+#19 DONE 1.7s
+
+#20 [stage-1 9/9] RUN useradd --create-home app && chown -R app /app /opt/fastembed
+#20 DONE 2.9s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 4.9s done
+#21 exporting manifest sha256:17a251a7e13bd7a51abd527154d16edb51d3aa0c113c36511456580f1a3cd7fd done
+#21 exporting config sha256:0714511337bdaeada225a723033a95f9f503703642f565eb2f6a2cb6cb6ea09d done
+#21 pushing layers for registry.fly.io/ergo-assist-ai:deployment-01M84VRGVXW5M0G12AMXXW2EQB@sha256:17a251a7e13bd7a51abd527154d16edb51d3aa0c113c36511456580f1a3cd7fd
+#21 pushing layer sha256:0714511337bdaeada225a723033a95f9f503703642f565eb2f6a2cb6cb6ea09d
+#21 pushing layer sha256:aff974881e41b9d6ce5f6b3a8e0b25037e1a25594f1c4489c62d27efa4ca08af
+#21 pushing layer sha256:e9d58d2bc28fae350bd7b66681cbcc009aac605d4f88aa9e169efc5bda96385e
+#21 pushing layer sha256:b5f92d0271443720d8c85ccf222ea9327e117b73a117e26d5ee7d34b59f7d5e9
+#21 pushing layer sha256:6ceb4677d409cb8a81f5f39e2d1eeb41ec8cce5f6f69ece3177c8b8904de8a4a
+#21 pushing layer sha256:8c16438578cf7b18f6e8faca661ffe9b16d7a45e959013dede4704a4a5c8dd17
+#21 pushing layer sha256:1e7f43e40c1d95822b0b9b6771a5d369b276480e7874412fa3f7fd0f6df30b46
+#21 pushing layer sha256:354cb02d8c2f99f1899d26b4e71beb708c88d8d45dcb0197fdb13d2fd63da818
+#21 pushing layer sha256:c01c386f0d8cf7991732349ecbe2c936ae86d4ff6e779870db068889bf127197
+#21 pushing layer sha256:8c0b6d28fb921b5093f7dcc1fa1680d892f77ea5c24f3080160df0f5cbfbc411
+#21 pushing layer sha256:c25edb95eda780b6f436f3e7418c8d636059bd73f02262e849e7393a35c086bf
+#21 pushing layer sha256:6b0d0d693bfc6e0f85feb163f69b3e104ce88d91735e5161b0f49e1335ce3ec6
+#21 pushing layer sha256:5dc793d50896cd9cbbef4a733468a47344b16f135b6b24942dbeddda0d8ebbcd
+#21 pushing layer sha256:354cb02d8c2f99f1899d26b4e71beb708c88d8d45dcb0197fdb13d2fd63da818 0.3s done
+#21 pushing layer sha256:6ceb4677d409cb8a81f5f39e2d1eeb41ec8cce5f6f69ece3177c8b8904de8a4a 0.5s done
+#21 pushing layer sha256:5dc793d50896cd9cbbef4a733468a47344b16f135b6b24942dbeddda0d8ebbcd 0.7s done
+#21 pushing layer sha256:6b0d0d693bfc6e0f85feb163f69b3e104ce88d91735e5161b0f49e1335ce3ec6 1.1s done
+#21 pushing layer sha256:e9d58d2bc28fae350bd7b66681cbcc009aac605d4f88aa9e169efc5bda96385e 1.6s done
+#21 pushing layer sha256:c25edb95eda780b6f436f3e7418c8d636059bd73f02262e849e7393a35c086bf 1.7s done
+#21 pushing layer sha256:0714511337bdaeada225a723033a95f9f503703642f565eb2f6a2cb6cb6ea09d 1.8s done
+#21 pushing layer sha256:b5f92d0271443720d8c85ccf222ea9327e117b73a117e26d5ee7d34b59f7d5e9 1.7s done
+#21 pushing layer sha256:8c16438578cf7b18f6e8faca661ffe9b16d7a45e959013dede4704a4a5c8dd17 1.7s done
+#21 pushing layer sha256:1e7f43e40c1d95822b0b9b6771a5d369b276480e7874412fa3f7fd0f6df30b46 1.7s done
+#21 pushing layer sha256:c01c386f0d8cf7991732349ecbe2c936ae86d4ff6e779870db068889bf127197 1.8s done
+#21 pushing layer sha256:8c0b6d28fb921b5093f7dcc1fa1680d892f77ea5c24f3080160df0f5cbfbc411 1.7s done
+#21 pushing layers for registry.fly.io/ergo-assist-ai:deployment-01M84VRGVXW5M0G12AMXXW2EQB@sha256:17a251a7e13bd7a51abd527154d16edb51d3aa0c113c36511456580f1a3cd7fd 4.5s done
+#21 pushing layer sha256:aff974881e41b9d6ce5f6b3a8e0b25037e1a25594f1c4489c62d27efa4ca08af 4.5s done
+#21 pushing manifest for registry.fly.io/ergo-assist-ai:deployment-01M84VRGVXW5M0G12AMXXW2EQB@sha256:17a251a7e13bd7a51abd527154d16edb51d3aa0c113c36511456580f1a3cd7fd
+#21 pushing manifest for registry.fly.io/ergo-assist-ai:deployment-01M84VRGVXW5M0G12AMXXW2EQB@sha256:17a251a7e13bd7a51abd527154d16edb51d3aa0c113c36511456580f1a3cd7fd 0.1s done
+#21 DONE 9.5s
+--> ]8;;Build Summary: ]8;;
+[38;5;252m--> Building image done[0m
+image: registry.fly.io/ergo-assist-ai:deployment-01M84VRGVXW5M0G12AMXXW2EQB
+image size: 560 MB
+
+Watch your deployment at https://fly.io/apps/ergo-assist-ai/monitoring
+
+Running ergo-assist-ai release_command: sh -c 'python manage.py migrate --noinput && python manage.py importar_catalogo && python manage.py indexar_conhecimento'
+> Created release_command machine d8d9e14c63e308
+> Waiting for d8d9e14c63e308 to have state: stopped
+> Machine d8d9e14c63e308 has state: stopped
+Starting machine
+> Waiting for d8d9e14c63e308 to have state: started
+> Waiting for d8d9e14c63e308 to have state: started
+> Machine d8d9e14c63e308 has state: started
+> Waiting for d8d9e14c63e308 to have state: destroyed
+> Machine d8d9e14c63e308 has state: destroyed
+> Waiting for d8d9e14c63e308 to get exit event
+✔ release_command d8d9e14c63e308 completed successfully
+Updating existing machines in 'ergo-assist-ai' with rolling strategy
+> Acquiring lease for 891dddc667dd38
+> Acquired lease for 891dddc667dd38
+> Updating machine config for 891dddc667dd38
+> Updating 891dddc667dd38 [app]
+> Updated machine config for 891dddc667dd38
+> Waiting for machine 891dddc667dd38 to reach a good state
+> Machine 891dddc667dd38 reached started state
+> Running smoke checks on machine 891dddc667dd38
+> Running machine checks on machine 891dddc667dd38
+> Checking health of machine 891dddc667dd38
+✔ Machine 891dddc667dd38 is now in a good state
+> Clearing lease for 891dddc667dd38
+✔ Cleared lease for 891dddc667dd38
+Checking DNS configuration for ergo-assist-ai.fly.dev
+✓ DNS configuration verified
+
+Visit your newly deployed app at https://ergo-assist-ai.fly.dev/
+

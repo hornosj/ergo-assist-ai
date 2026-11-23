@@ -7,6 +7,7 @@ export default function Entrar() {
   const [modo, setModo] = useState<'entrar' | 'cadastro'>('entrar')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [convite, setConvite] = useState('')
   const [erro, setErro] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -16,7 +17,7 @@ export default function Entrar() {
     setEnviando(true)
     try {
       const r = await api<{ token: string }>(modo === 'entrar' ? 'auth/token' : 'auth/cadastro', {
-        corpo: { username, password },
+        corpo: modo === 'entrar' ? { username, password } : { username, password, convite },
       })
       entrar(r.token, username)
     } catch (err) {
@@ -48,6 +49,12 @@ export default function Entrar() {
             required
           />
         </label>
+        {modo === 'cadastro' && (
+          <label>
+            Código de convite
+            <input value={convite} onChange={(e) => setConvite(e.target.value)} autoComplete="off" />
+          </label>
+        )}
         {erro && <p className="erro">{erro}</p>}
         <button className="primario" disabled={enviando}>
           {enviando ? 'Aguarde…' : modo === 'entrar' ? 'Entrar' : 'Criar conta'}

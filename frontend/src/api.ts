@@ -148,6 +148,7 @@ export interface Mensagem {
   latencia_ms: number | null
   tokens_entrada: number
   tokens_saida: number
+  custo_usd?: string | number
   passos: Passo[]
   acoes?: Acao[]
 }

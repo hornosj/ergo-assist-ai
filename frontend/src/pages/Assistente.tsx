@@ -141,6 +141,7 @@ export default function Assistente() {
                     {m.passos.filter((p) => p.ferramenta).length} passo(s)
                     {m.modo === 'sem_ia' ? ' · modo sem IA' : m.modelo ? ` · ${m.modelo}` : ''}
                     {m.latencia_ms ? ` · ${(m.latencia_ms / 1000).toFixed(1)} s` : ''}
+                    {Number(m.custo_usd) > 0 ? ` · US$ ${Number(m.custo_usd).toFixed(4)}` : ''}
                   </summary>
                   <ol>
                     {m.passos.map((p, i) =>

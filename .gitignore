@@ -10,3 +10,5 @@ backend/evals/resultados/*.json
 django.log
 vite.log
 frontend/dist/
+.env.*
+!backend/.env.example
